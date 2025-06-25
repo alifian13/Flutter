@@ -1,52 +1,68 @@
 import '../app/presentation/screens/home_screen.dart';
 import '../app/data/local/models/transaction_model.dart';
-import '../app/services/notification_service.dart';
+// import '../app/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../app/data/local/models/account_model.dart';
 import '/core/utils/constants.dart';
 import '/app/presentation/screens/onboarding_screen.dart';
 
-// Variabel global untuk melacak apakah ini peluncuran pertama
-late bool isFirstLaunch;
+// Tambahkan konstanta untuk nama Hive box jika belum ada
+const String kAccountsBox = 'accounts';
+const String kTransactionsBox = 'transactions';
 
 void main() async {
-  // 1. Pastikan Flutter siap sebelum menjalankan kode lain
+  // 1. Pastikan Flutter siap
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. Inisialisasi format tanggal untuk Bahasa Indonesia
-  await initializeDateFormatting('id_ID', null); 
+  // 2. Inisialisasi format tanggal
+  await initializeDateFormatting('id_ID', null);
 
   // 3. Inisialisasi Hive
   await Hive.initFlutter();
 
-  // 4. Daftarkan semua Adapter yang kita miliki
+  // 4. Daftarkan semua Adapter
+  Hive.registerAdapter(AccountAdapter());
   Hive.registerAdapter(TransactionAdapter());
   Hive.registerAdapter(TransactionTypeAdapter());
-  Hive.registerAdapter(AccountAdapter()); // <-- ADAPTER BARU DIDAFTARKAN
+  // Jika Anda punya model Category, daftarkan adapter-nya di sini
+  // Hive.registerAdapter(CategoryAdapter());
 
-  // 5. Buka semua "box" yang diperlukan aplikasi
+  // 5. Buka semua box yang diperlukan
+  await Hive.openBox('settings');
+  await Hive.openBox<Account>(kAccountsBox);
   await Hive.openBox<Transaction>(kTransactionsBox);
-  await Hive.openBox<Account>('accounts'); // <-- BOX BARU DIBUKA
+  // Jika Anda punya model Category, buka box-nya di sini
+  // await Hive.openBox<Category>(kCategoriesBox);
 
-  // 6. Cek apakah ini pertama kalinya aplikasi dijalankan
-  final prefs = await SharedPreferences.getInstance();
-  // Menggunakan key dari file constants untuk konsistensi
-  isFirstLaunch = prefs.getBool(kFirstLaunchKey) ?? true;
+  // 6. Ambil referensi box
+  final settingsBox = Hive.box('settings');
+  final accountsBox = Hive.box<Account>(kAccountsBox);
 
-  // 7. Mulai mendengarkan notifikasi di background (jika diizinkan)
-  if (await AppNotificationService.isPermissionGranted()) {
-    await AppNotificationService.startListening();
+  // --- LOGIKA PENGAMAN DATA HILANG (Tetap Dipertahankan) ---
+  bool onboardingCompleted = settingsBox.get(kOnboardingCompletedKey, defaultValue: false);
+  bool accountDataExists = accountsBox.isNotEmpty;
+
+  if (accountDataExists && !onboardingCompleted) {
+    await settingsBox.put(kOnboardingCompletedKey, true);
+    onboardingCompleted = true;
   }
-  
+  // --- Akhir Logika Pengaman ---
+
+  // 7. Hapus logika memulai Notification Service dari sini untuk mencegah crash
+
   // 8. Jalankan aplikasi
-  runApp(const MyApp());
+  runApp(MyApp(onboardingCompleted: onboardingCompleted));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool onboardingCompleted;
+
+  const MyApp({
+    super.key,
+    required this.onboardingCompleted,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +83,7 @@ class MyApp extends StatelessWidget {
         ),
       ),
       debugShowCheckedModeBanner: false,
-      home: isFirstLaunch ? const OnboardingScreen() : const HomeScreen(), 
+      home: onboardingCompleted ? const HomeScreen() : const OnboardingScreen(),
     );
   }
 }

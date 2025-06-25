@@ -1,13 +1,17 @@
 import '../screens/add_transaction_screen.dart';
 import '../../data/local/models/account_model.dart';
 import '../../data/local/models/transaction_model.dart';
+import '../../services/notification_service.dart';
 import '../screens/settings_screen.dart';
 import '../widgets/transaction_list_item.dart';
-import '/core/utils/constants.dart';
+import '../../../core/utils/constants.dart';
 import '/core/utils/formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
+
+// Tambahkan definisi kAccountsBox jika belum ada
+const String kAccountsBox = 'accounts';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,7 +21,33 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Fungsi untuk menghitung saldo sebuah akun
+  // --- MULAI BLOK PERBAIKAN ---
+  @override
+  void initState() {
+    super.initState();
+    // Panggil fungsi untuk memulai layanan notifikasi setelah frame UI pertama selesai dibangun.
+    // Ini adalah kunci untuk mencegah crash.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initiateNotificationService();
+    });
+  }
+
+  /// Fungsi baru untuk memulai layanan notifikasi secara aman.
+  Future<void> _initiateNotificationService() async {
+    // Cek dulu apakah izin sudah diberikan oleh pengguna.
+    if (await AppNotificationService.isPermissionGranted()) {
+      // Jika ya, baru mulai mendengarkan notifikasi.
+      // Melakukan ini di sini (setelah UI stabil) jauh lebih aman daripada di main().
+      await AppNotificationService.startListening();
+      debugPrint("Notification service started safely from HomeScreen.");
+    } else {
+      debugPrint("Notification permission not granted. Service not started.");
+    }
+  }
+  // --- AKHIR BLOK PERBAIKAN ---
+
+
+  // Fungsi _calculateBalance Anda tetap dipertahankan seperti semula.
   double _calculateBalance(Account account, List<Transaction> allTransactions) {
     double balance = 0;
     // Filter transaksi hanya untuk akun ini
@@ -34,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Keseluruhan method build Anda tidak diubah sama sekali.
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ceban - Dompetku'),
@@ -62,7 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
               SizedBox(
                 height: 110,
                 child: ValueListenableBuilder<Box<Account>>(
-                  valueListenable: Hive.box<Account>('accounts').listenable(),
+                  valueListenable: Hive.box<Account>(kAccountsBox).listenable(),
                   builder: (context, accountBox, __) {
                     final accounts = accountBox.values.toList();
                     if (accounts.isEmpty) {
@@ -124,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// Widget untuk kartu akun
+// Widget untuk kartu akun Anda tidak diubah.
 class AccountCard extends StatelessWidget {
   final Account account;
   final double balance;

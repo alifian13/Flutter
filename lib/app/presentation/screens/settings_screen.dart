@@ -99,6 +99,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _checkPermissionStatus();
             },
           ),
+          ListTile( // <-- TAMBAHKAN BLOK INI
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: const Text('Kelola Akun'),
+            subtitle: const Text('Tambah atau hapus akun bank & e-wallet'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ManageAccountsScreen()),
+              );
+            },
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.upload_file),

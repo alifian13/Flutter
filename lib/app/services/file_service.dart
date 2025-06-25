@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:file_saver/file_saver.dart';
 import '../data/local/models/transaction_model.dart';
 import '/core/utils/constants.dart';
 import 'package:csv/csv.dart';
@@ -10,28 +11,15 @@ import 'package:permission_handler/permission_handler.dart';
 class FileService {
 
   // --- FUNGSI UNTUK EKSPOR ---
-  Future<String?> exportToCsv() async {
-    // 1. Minta Izin Penyimpanan
-    // Perizinan di Android versi baru lebih ketat.
-    var status = await Permission.manageExternalStorage.status;
-    if (!status.isGranted) {
-      status = await Permission.manageExternalStorage.request();
-    }
-    
-    if (!status.isGranted) {
-        // Jika pengguna menolak, kita tidak bisa melanjutkan.
-        return "Izin penyimpanan ditolak. Tidak dapat mengekspor file.";
-    }
-
+  Future<String> exportToCsv() async {
     try {
       final transactionBox = Hive.box<Transaction>(kTransactionsBox);
       final transactions = transactionBox.values.toList();
       if (transactions.isEmpty) return "Tidak ada data untuk diekspor.";
 
+      // Siapkan header dan baris data
       List<List<dynamic>> rows = [];
-      // Header CSV
-      rows.add(['description', 'amount', 'date', 'type', 'account_name']);
-      // Data Transaksi
+      rows.add(['description', 'amount', 'date', 'type', 'account_name', 'category']);
       for (var trx in transactions) {
         rows.add([
           trx.description,
@@ -39,31 +27,28 @@ class FileService {
           trx.date.toIso8601String(),
           describeEnum(trx.type),
           trx.account.name,
+          'N/A' // Kolom kategori belum ada di model, kita beri default
         ]);
       }
 
       String csvString = const ListToCsvConverter().convert(rows);
 
-      // 2. Dapatkan Path ke Folder Downloads
-      // Menggunakan path_provider untuk direktori Downloads
-      final externalDir = await getExternalStorageDirectory();
-      if (externalDir == null) {
-        return "Tidak dapat menemukan folder Downloads.";
-      }
-      // Biasanya folder Download ada di bawah direktori eksternal
-      final downloadsDir = Directory("${externalDir.path}/Download");
-      if (!await downloadsDir.exists()) {
-        await downloadsDir.create(recursive: true);
-      }
+      final csvBytes = Uint8List.fromList(csvString.codeUnits);
 
-      final path = "${downloadsDir.path}/$kBackupFileName";
-      final file = File(path);
+      // Gunakan file_saver untuk memunculkan dialog 'Simpan Sebagai'
+      // Ini adalah cara modern & tidak perlu izin penyimpanan
+      String? filePath = await FileSaver.instance.saveFile(
+        name: kBackupFileName, // Nama file default dari constants.dart
+        bytes: csvBytes,
+        ext: 'csv',
+        mimeType: MimeType.csv,
+      );
 
-      // 3. Tulis File
-      await file.writeAsString(csvString);
-      debugPrint("Data berhasil diekspor ke: $path");
-      
-      return "Ekspor berhasil! File disimpan di folder Downloads.";
+      if (filePath != null) {
+        return "Ekspor berhasil! File disimpan oleh sistem.";
+      } else {
+        return "Ekspor dibatalkan oleh pengguna.";
+      }
     } catch (e) {
       debugPrint("Error saat ekspor data: $e");
       return "Terjadi error saat mengekspor: $e";

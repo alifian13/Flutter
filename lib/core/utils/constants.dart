@@ -9,3 +9,5 @@ const Color kIncomeColor = Colors.green;
 const Color kExpenseColor = Colors.red;
 
 const String kBackupFileName = 'ceban_backup.csv';
+
+const String kOnboardingCompletedKey = 'onboarding_completed';
