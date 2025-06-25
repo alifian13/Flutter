@@ -1,54 +1,72 @@
-// lib/app/services/file_service.dart
-
 import 'dart:io';
 import '../data/local/models/transaction_model.dart';
 import '/core/utils/constants.dart';
 import 'package:csv/csv.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class FileService {
 
   // --- FUNGSI UNTUK EKSPOR ---
-  Future<String?> exportToCsv(List<Transaction> transactions) async {
+  Future<String?> exportToCsv() async {
+    // 1. Minta Izin Penyimpanan
+    // Perizinan di Android versi baru lebih ketat.
+    var status = await Permission.manageExternalStorage.status;
+    if (!status.isGranted) {
+      status = await Permission.manageExternalStorage.request();
+    }
+    
+    if (!status.isGranted) {
+        // Jika pengguna menolak, kita tidak bisa melanjutkan.
+        return "Izin penyimpanan ditolak. Tidak dapat mengekspor file.";
+    }
+
     try {
-      // Buat daftar dari daftar data (List of Lists) untuk CSV
+      final transactionBox = Hive.box<Transaction>(kTransactionsBox);
+      final transactions = transactionBox.values.toList();
+      if (transactions.isEmpty) return "Tidak ada data untuk diekspor.";
+
       List<List<dynamic>> rows = [];
-
-      // Tambahkan baris header
-      rows.add(['description', 'amount', 'date', 'type']);
-
-      // Tambahkan data transaksi
+      // Header CSV
+      rows.add(['description', 'amount', 'date', 'type', 'account_name']);
+      // Data Transaksi
       for (var trx in transactions) {
         rows.add([
           trx.description,
           trx.amount,
-          trx.date.toIso8601String(), // Simpan dalam format ISO agar mudah dibaca kembali
-          describeEnum(trx.type), // Ubah enum menjadi string (misal: 'pengeluaran')
+          trx.date.toIso8601String(),
+          describeEnum(trx.type),
+          trx.account.name,
         ]);
       }
 
-      // Ubah data menjadi string CSV
       String csvString = const ListToCsvConverter().convert(rows);
 
-      // Dapatkan direktori Downloads di perangkat
-      final directory = await getExternalStorageDirectory();
-      if (directory == null) {
-        debugPrint("Tidak bisa menemukan direktori eksternal.");
-        return null;
+      // 2. Dapatkan Path ke Folder Downloads
+      // Menggunakan path_provider untuk direktori Downloads
+      final externalDir = await getExternalStorageDirectory();
+      if (externalDir == null) {
+        return "Tidak dapat menemukan folder Downloads.";
+      }
+      // Biasanya folder Download ada di bawah direktori eksternal
+      final downloadsDir = Directory("${externalDir.path}/Download");
+      if (!await downloadsDir.exists()) {
+        await downloadsDir.create(recursive: true);
       }
 
-      final path = "${directory.path}/$kBackupFileName";
+      final path = "${downloadsDir.path}/$kBackupFileName";
       final file = File(path);
 
-      // Tulis string CSV ke dalam file
+      // 3. Tulis File
       await file.writeAsString(csvString);
       debugPrint("Data berhasil diekspor ke: $path");
-
-      return path; // Kembalikan path file yang berhasil dibuat
+      
+      return "Ekspor berhasil! File disimpan di folder Downloads.";
     } catch (e) {
       debugPrint("Error saat ekspor data: $e");
-      return null;
+      return "Terjadi error saat mengekspor: $e";
     }
   }
 

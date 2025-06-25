@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import '/core/utils/constants.dart';
+import '../screens/manage_accounts_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -39,7 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final transactionBox = Hive.box<Transaction>(kTransactionsBox);
     final transactions = transactionBox.values.toList();
     final fileService = FileService();
-    final filePath = await fileService.exportToCsv(transactions);
+    final filePath = await fileService.exportToCsv();
 
     if (mounted) Navigator.pop(context);
 

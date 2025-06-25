@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
-import '../services/notification_parser.dart';
+import '../services/background_parser.dart';
 
 @pragma('vm:entry-point')
 void onNotificationPosted() {
@@ -19,14 +19,18 @@ class AppNotificationService {
     // Stream ini akan menerima data notifikasi secara real-time
     // saat aplikasi sedang dibuka (foreground).
     NotificationListenerService.notificationsStream.listen((event) {
-      debugPrint("--- Notifikasi Baru Diterima (Foreground) ---");
-      debugPrint("App: ${event.packageName}");
-      debugPrint("Judul: ${event.title}");
-      debugPrint("Isi: ${event.content}");
-      debugPrint("---------------------------------------------");
+      // debugPrint("--- Notifikasi Baru Diterima (Foreground) ---");
+      // debugPrint("App: ${event.packageName}");
+      // debugPrint("Judul: ${event.title}");
+      // debugPrint("Isi: ${event.content}");
+      // debugPrint("---------------------------------------------");
       
       if (event.packageName != null && event.content != null) {
-        NotificationParser.parseAndSave(event.packageName!, event.content!);
+        // Jangan proses di sini, kirim ke background isolate
+        compute(parseNotificationInBackground, {
+          'packageName': event.packageName!,
+          'text': event.content!,
+        });
       }
     });
   }
