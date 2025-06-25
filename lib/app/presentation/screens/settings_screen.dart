@@ -1,9 +1,7 @@
-import '../../services/notification_service.dart';
-import '/app/data/local/models/transaction_model.dart';
-import '../../services/file_service.dart';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
-import '/core/utils/constants.dart';
+
+import '../../services/notification_service.dart';
+import '../../services/file_service.dart';
 import '../screens/manage_accounts_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -14,6 +12,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  // Menggunakan nama variabel Anda agar konsisten
   bool _isServiceEnabled = false;
 
   @override
@@ -22,13 +21,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _checkPermissionStatus();
   }
 
+  /// Cek status izin saat ini dan perbarui UI.
   void _checkPermissionStatus() async {
     bool isEnabled = await AppNotificationService.isPermissionGranted();
-    setState(() {
-      _isServiceEnabled = isEnabled;
-    });
+    if (mounted) {
+      setState(() {
+        _isServiceEnabled = isEnabled;
+      });
+    }
   }
 
+  /// Menangani logika untuk ekspor database.
   Future<void> _handleExport() async {
     showDialog(
       context: context,
@@ -46,13 +49,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// Menangani logika untuk impor database.
   Future<void> _handleImport() async {
     final fileService = FileService();
     final message = await fileService.importDatabase();
     
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
 
   @override
@@ -61,16 +67,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(title: const Text('Pengaturan')),
       body: ListView(
         children: [
+          // Memberi judul pada setiap seksi agar lebih rapi
+          const ListTile(
+            title: Text('Otomatisasi', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+          ),
           SwitchListTile(
-            title: const Text('Aktifkan Pencatatan Otomatis'),
-            subtitle: const Text('Membaca notifikasi dari aplikasi keuangan'),
+            secondary: const Icon(Icons.notifications_active_outlined),
+            title: const Text('Pencatatan Otomatis'),
+            // Menggunakan subtitle yang lebih deskriptif untuk memberi tahu statusnya
+            subtitle: Text(
+              _isServiceEnabled
+                ? 'Aktif. Aplikasi akan membaca notifikasi transaksi.'
+                : 'Nonaktif. Klik untuk memberikan izin akses notifikasi.',
+            ),
             value: _isServiceEnabled,
             onChanged: (bool value) async {
-              if (value) await AppNotificationService.requestPermission();
-              _checkPermissionStatus();
+              if (value) {
+                await AppNotificationService.requestPermission();
+              }
+              // Beri jeda sejenak agar dialog sistem sempat tertutup
+              // sebelum kita cek ulang status izinnya.
+              Future.delayed(const Duration(seconds: 1), _checkPermissionStatus);
             },
           ),
-          ListTile( // <-- TAMBAHKAN BLOK INI
+          const Divider(),
+
+          const ListTile(
+            title: Text('Manajemen Data & Akun', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+          ),
+          ListTile(
             leading: const Icon(Icons.account_balance_wallet_outlined),
             title: const Text('Kelola Akun'),
             subtitle: const Text('Tambah atau hapus akun bank & e-wallet'),
@@ -81,17 +106,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
-          const Divider(),
           ListTile(
-            leading: const Icon(Icons.upload_file),
+            leading: const Icon(Icons.upload_file_outlined),
             title: const Text('Ekspor Data'),
             subtitle: const Text('Simpan salinan data di penyimpanan ponsel'),
             onTap: _handleExport,
           ),
           ListTile(
-            leading: const Icon(Icons.download_for_offline),
+            leading: const Icon(Icons.download_for_offline_outlined),
             title: const Text('Impor Data'),
-            subtitle: const Text('Pulihkan data dari file backup'),
+            subtitle: const Text('Pulihkan data dari file cadangan'),
             onTap: _handleImport,
           ),
           const Divider(),
