@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../models/account_model.dart';
 part 'transaction_model.g.dart';
 
 // Enum untuk tipe transaksi
@@ -22,7 +23,9 @@ class Transaction extends HiveObject {
   @HiveField(2)
   late DateTime date;
 
-  // Field baru untuk tipe transaksi
   @HiveField(3)
   late TransactionType type;
+
+  @HiveField(4)
+  late Account account;
 }

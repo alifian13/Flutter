@@ -1,4 +1,7 @@
+import 'package:frontend/core/utils/formatter.dart';
+
 import '../../data/local/models/transaction_model.dart';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -14,11 +17,7 @@ class TransactionListItem extends StatelessWidget {
     final Color color = isExpense ? Colors.red : Colors.green;
     final IconData iconData = isExpense ? Icons.arrow_upward : Icons.arrow_downward;
 
-    final amountFormatted = NumberFormat.currency(
-      locale: 'id_ID',
-      symbol: 'Rp ',
-      decimalDigits: 0,
-    ).format(transaction.amount);
+    final amountFormatted = AppFormatters.toRupiah(transaction.amount);
 
     final dateFormatted = DateFormat('d MMMM yyyy, HH:mm', 'id_ID').format(transaction.date);
 

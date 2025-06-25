@@ -1,5 +1,6 @@
 import '../screens/add_transaction_screen.dart';
 import '../../data/local/models/transaction_model.dart';
+import '../screens/settings_screen.dart';
 import '../widgets/transaction_list_item.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -19,6 +20,17 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Ceban - Catatan Keuangan'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: ValueListenableBuilder(
         valueListenable: Hive.box<Transaction>('transactions').listenable(),
