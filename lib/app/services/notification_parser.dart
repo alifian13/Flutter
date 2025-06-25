@@ -1,98 +1,152 @@
+import 'package:flutter/foundation.dart';
+import '../data/local/database_helper.dart';
 import '../data/local/models/account_model.dart';
 import '../data/local/models/transaction_model.dart';
-import '/core/utils/constants.dart';
-import 'package:flutter/foundation.dart';
-import 'package:hive/hive.dart';
+import 'transaction_stream.dart'; // <-- 1. IMPORT STREAM SERVICE
 
 class NotificationParser {
-  /// Titik masuk utama untuk mem-parsing notifikasi.
-  /// Bertindak sebagai router untuk memanggil parser yang sesuai berdasarkan nama paket.
-  static Future<void> parseAndSave(String packageName, String text) async {
-    // Menormalkan nama paket untuk pencocokan yang lebih mudah
-    final lowerCasePackage = packageName.toLowerCase();
+  static final dbHelper = DatabaseHelper();
 
-    // Router untuk setiap layanan keuangan
-    if (lowerCasePackage.contains('seabank')) {
-      _parseTransaction(text, _seaBankRules, 'SeaBank');
-    } else if (lowerCasePackage.contains('bca')) {
-      _parseTransaction(text, _bcaRules, 'BCA');
-    } else if (lowerCasePackage.contains('bri.brimo')) {
-      _parseTransaction(text, _briRules, 'BRI');
-    } else if (lowerCasePackage.contains('bni.mobile')) {
-      _parseTransaction(text, _bniRules, 'BNI');
-    } else if (lowerCasePackage.contains('bankmandiri.livin')) {
-      _parseTransaction(text, _mandiriRules, 'Mandiri');
-    } else if (lowerCasePackage.contains('jago')) {
-      _parseTransaction(text, _jagoRules, 'Jago');
-    } else if (lowerCasePackage.contains('ocbc.mobile')) {
-      _parseTransaction(text, _ocbcRules, 'OCBC');
-    } else if (lowerCasePackage.contains('gojek.app') || lowerCasePackage.contains('gopay')) {
-      _parseTransaction(text, _gopayRules, 'Gopay');
-    } else if (lowerCasePackage.contains('id.dana')) {
-      _parseTransaction(text, _danaRules, 'Dana');
-    } else if (lowerCasePackage.contains('shopee')) {
-      _parseTransaction(text, _shopeePayRules, 'ShopeePay');
-    } else if (lowerCasePackage.contains('id.ovo')) {
-      _parseTransaction(text, _ovoRules, 'OVO');
-    } else if (lowerCasePackage.contains('linkaja')) {
-      _parseTransaction(text, _linkAjaRules, 'LinkAja');
+  // === HYBRID PARSING SYSTEM ===
+  /// Titik masuk utama untuk mem-parsing notifikasi.
+  static Future<void> parseAndSave(String packageName, String text) async {
+    final lowerCasePackage = packageName.toLowerCase();
+    
+    // 1. Coba parsing menggunakan aturan Regex yang spesifik terlebih dahulu
+    final bool parsedWithRegex = await _tryParseWithSpecificRules(lowerCasePackage, text);
+
+    // 2. Jika gagal dengan Regex, gunakan metode kata kunci sebagai cadangan
+    if (!parsedWithRegex) {
+      debugPrint("Regex parsing failed. Falling back to keyword-based method.");
+      await _tryParseWithKeywords(lowerCasePackage, text);
     }
   }
 
-  /// Fungsi generik untuk memproses teks notifikasi berdasarkan sekumpulan aturan.
-  static void _parseTransaction(String text, List<Map<String, dynamic>> rules, String accountHint) {
-    for (var rule in rules) {
-      final match = (rule['regex'] as RegExp).firstMatch(text);
-      if (match != null) {
-        final amountString = match.group(1)!.replaceAll('.', '').replaceAll(',', '');
-        final amount = double.tryParse(amountString);
+  /// [PRIORITAS 1] Mencoba mem-parsing menggunakan aturan Regex yang spesifik.
+  static Future<bool> _tryParseWithSpecificRules(String lowerCasePackage, String text) async {
+    final Map<String, List<Map<String, dynamic>>> allRules = {
+      'seabank': _seaBankRules,
+      'bca': _bcaRules,
+      'bri.brimo': _briRules,
+      'bni.mobile': _bniRules,
+      'bankmandiri.livin': _mandiriRules,
+      'jago': _jagoRules,
+      'ocbc.mobile': _ocbcRules,
+      'gopay': _gopayRules,
+      'gojek': _gopayRules,
+      'dana': _danaRules,
+      'shopee': _shopeePayRules,
+      'ovo': _ovoRules,
+      'linkaja': _linkAjaRules,
+    };
 
-        if (amount != null) {
-          // Menggunakan deskripsi dari aturan, dengan fallback.
-          String description = rule['description'] ?? 'Transaksi $accountHint';
-          // Jika ada grup deskripsi di regex, gunakan itu.
-          if (match.groupCount > 1 && match.group(2) != null) {
-            description = '${rule['desc_prefix'] ?? ''}${match.group(2)}'.trim();
+    for (var entry in allRules.entries) {
+      if (lowerCasePackage.contains(entry.key)) {
+        for (var rule in entry.value) {
+          final match = (rule['regex'] as RegExp).firstMatch(text);
+          if (match != null) {
+            final amountString = match.group(1)!.replaceAll('.', '').replaceAll(',', '');
+            final amount = double.tryParse(amountString);
+
+            if (amount != null) {
+              String description = rule['description'] ?? 'Transaksi ${entry.key}';
+              if (match.groupCount > 1 && match.group(2) != null) {
+                description = '${rule['desc_prefix'] ?? ''}${match.group(2)}'.trim();
+              }
+              await _saveTransaction(rule['type'], amount, description, entry.key);
+              debugPrint("Success parsing with specific Regex rule for ${entry.key}.");
+              return true; // Berhasil, hentikan proses.
+            }
           }
-
-          _saveTransaction(rule['type'], amount, description, accountHint);
-          // Hentikan setelah aturan pertama yang cocok ditemukan
-          return;
         }
       }
     }
+    return false; // Tidak ada aturan Regex yang cocok.
   }
 
-  /// Menyimpan transaksi yang berhasil di-parsing ke database.
+  /// [CADANGAN] Mencoba mem-parsing menggunakan kata kunci umum.
+  static Future<void> _tryParseWithKeywords(String lowerCasePackage, String text) async {
+    final lowerCaseText = text.toLowerCase();
+    
+    final amountPattern = RegExp(r'(?:Rp|sebesar)\s*([\d.,]+)', caseSensitive: false);
+    final amountMatch = amountPattern.firstMatch(text);
+    if (amountMatch == null) return;
+    
+    final amountString = amountMatch.group(1)!.replaceAll('.', '').replaceAll(',', '.');
+    final amount = double.tryParse(amountString);
+    if (amount == null) return;
+    
+    const expenseKeywords = ['transfer ke', 'mengirim', 'bayar', 'pembayaran', 'terpakai', 'transaksi keluar'];
+    const incomeKeywords = ['menerima', 'transfer dari', 'masuk', 'diterima', 'terima uang', 'penerimaan dana', 'top up'];
+    
+    TransactionType? type;
+    if (expenseKeywords.any((keyword) => lowerCaseText.contains(keyword))) {
+      type = TransactionType.pengeluaran;
+    } else if (incomeKeywords.any((keyword) => lowerCaseText.contains(keyword))) {
+      type = TransactionType.pemasukan;
+    }
+
+    if (type == null) return;
+
+    final packageHints = {
+      'seabank': 'SeaBank', 'bca': 'BCA', 'bri.brimo': 'BRI', 'bni.mobile': 'BNI',
+      'bankmandiri.livin': 'Mandiri', 'jago': 'Jago', 'ocbc.mobile': 'OCBC',
+      'gopay': 'Gopay', 'gojek': 'Gopay', 'dana': 'DANA', 'shopee': 'ShopeePay',
+      'ovo': 'OVO', 'linkaja': 'LinkAja',
+    };
+    
+    String? accountHint;
+    for (var key in packageHints.keys) {
+      if (lowerCasePackage.contains(key)) {
+        accountHint = packageHints[key];
+        break;
+      }
+    }
+    
+    if (accountHint != null) {
+      await _saveTransaction(type, amount, 'Transaksi Otomatis', accountHint);
+    }
+  }
+
+  /// Fungsi utilitas untuk menyimpan transaksi ke database.
   static Future<void> _saveTransaction(TransactionType type, double amount, String description, String accountHint) async {
-    final accountBox = Hive.box<Account>('accounts');
+    final allAccounts = await dbHelper.getAccounts();
+    if (allAccounts.isEmpty) {
+        debugPrint('Parser: No accounts available. Transaction cancelled.');
+        return;
+    }
+
     Account? targetAccount;
     try {
-      targetAccount = accountBox.values.firstWhere(
+      targetAccount = allAccounts.firstWhere(
         (acc) => acc.name.toLowerCase().contains(accountHint.toLowerCase()),
       );
     } catch (e) {
-      debugPrint('Akun untuk "$accountHint" tidak ditemukan. Transaksi otomatis dibatalkan.');
-      return;
+      debugPrint('Parser: Account for "$accountHint" not found. Using the first account as default.');
+      targetAccount = allAccounts.first;
     }
 
-    final newTransaction = Transaction()
-      ..description = description
-      ..amount = amount
-      ..date = DateTime.now()
-      ..type = type
-      ..account = targetAccount;
+    final newTransaction = Transaction(
+      description: description,
+      amount: amount,
+      date: DateTime.now(),
+      type: type,
+      accountId: targetAccount.id!,
+    );
+    
+    await dbHelper.insertTransaction(newTransaction);
+    
+    // <-- 2. KIRIM SINYAL SETELAH TRANSAKSI BERHASIL DISIMPAN
+    TransactionStream.newTransactionAdded();
 
-    final transactionBox = Hive.box<Transaction>(kTransactionsBox);
-    await transactionBox.add(newTransaction);
-    debugPrint('Transaksi otomatis dari $accountHint berhasil disimpan: $description sejumlah $amount');
+    debugPrint('Parser: Auto transaction from "$accountHint" saved successfully and signal sent.');
   }
 
-  // --- KUMPULAN ATURAN PARSING UNTUK SETIAP APLIKASI ---
+  // --- KUMPULAN ATURAN REGEX SPESIFIK ---
 
   static final List<Map<String, dynamic>> _seaBankRules = [
     {'type': TransactionType.pemasukan, 'regex': RegExp(r"menerima transfer sebesar Rp([\d.,]+)"), 'description': 'Transfer Masuk SeaBank'},
-    {'type': TransactionType.pengeluaran, 'regex': RegExp(r"mengirimkan uang sebesar Rp([\d.,]+)"), 'description': 'Transfer Keluar SeaBank'},
+    {'type': TransactionType.pengeluaran, 'regex': RegExp(r"Kamu baru melakukan transfer senilai Rp([\d.,]+)"), 'description': 'Realtime Transfer'},
     {'type': TransactionType.pengeluaran, 'regex': RegExp(r"Pembayaran QRIS sebesar Rp([\d.,]+) di (.+) berhasil"), 'desc_prefix': 'QRIS: '},
   ];
 
@@ -101,7 +155,17 @@ class NotificationParser {
     {'type': TransactionType.pengeluaran, 'regex': RegExp(r"m-Transfer ke (.+) BERHASIL Rp([\d.,]+)"), 'desc_prefix': 'Trf. ke: '},
     {'type': TransactionType.pengeluaran, 'regex': RegExp(r"Pembayaran QR Rp([\d.,]+) di (.+) berhasil"), 'desc_prefix': 'QRIS: '},
   ];
-  
+
+  static final List<Map<String, dynamic>> _gopayRules = [
+    {'type': TransactionType.pengeluaran, 'regex': RegExp(r"GoPay terpakai Rp([\d.,]+) bwt bayar"), 'description': 'Bayar pakai GoPay'},
+    {'type': TransactionType.pengeluaran, 'regex': RegExp(r"Kamu bayar Rp([\d.,]+) ke (.+)\."), 'desc_prefix': 'Bayar ke: '},
+    {'type': TransactionType.pengeluaran, 'regex': RegExp(r"Kamu berhasil transfer Rp([\d.,]+) ke (.+)\."), 'desc_prefix': 'Transfer ke: '},
+    {'type': TransactionType.pemasukan, 'regex': RegExp(r"Kamu berhasil top up GoPay Rp([\d.,]+)"), 'description': 'Top Up GoPay'},
+    {'type': TransactionType.pemasukan, 'regex': RegExp(r"Dapet cashback Rp([\d.,]+)"), 'description': 'Cashback GoPay'},
+    {'type': TransactionType.pemasukan, 'regex': RegExp(r"Kamu dapet GoPay, nih Rp([\d.,]+)"), 'description': 'Terima GoPay'},
+  ];
+
+  // ... (Sisa aturan lainnya bisa ditambahkan di sini dengan format yang sama)
   static final List<Map<String, dynamic>> _briRules = [
     {'type': TransactionType.pemasukan, 'regex': RegExp(r"penerimaan dana Rp([\d.,]+) dari"), 'description': 'Penerimaan Dana BRI'},
     {'type': TransactionType.pengeluaran, 'regex': RegExp(r"Transaksi Keluar: Rp ([\d.,]+)"), 'description': 'Transaksi Keluar BRI'},
@@ -127,13 +191,6 @@ class NotificationParser {
   static final List<Map<String, dynamic>> _ocbcRules = [
     {'type': TransactionType.pemasukan, 'regex': RegExp(r"Anda menerima dana sebesar Rp ([\d.,]+)"), 'description': 'Terima Dana OCBC'},
     {'type': TransactionType.pengeluaran, 'regex': RegExp(r"Anda telah mentransfer Rp ([\d.,]+)"), 'description': 'Transfer OCBC'},
-  ];
-
-  static final List<Map<String, dynamic>> _gopayRules = [
-    {'type': TransactionType.pengeluaran, 'regex': RegExp(r"GoPay terpakai Rp([\d.,]+) bwt bayar"), 'description': 'Bayar pakai GoPay'},
-    {'type': TransactionType.pengeluaran, 'regex': RegExp(r"Kamu bayar Rp([\d.,]+) ke (.+)."), 'desc_prefix': 'Bayar ke: '},
-    {'type': TransactionType.pemasukan, 'regex': RegExp(r"Kamu berhasil top up GoPay Rp([\d.,]+)"), 'description': 'Top Up GoPay'},
-    {'type': TransactionType.pemasukan, 'regex': RegExp(r"Dapet cashback Rp([\d.,]+)"), 'description': 'Cashback GoPay'},
   ];
 
   static final List<Map<String, dynamic>> _danaRules = [

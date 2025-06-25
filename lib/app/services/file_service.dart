@@ -1,92 +1,70 @@
 import 'dart:io';
 import 'package:file_saver/file_saver.dart';
-import '../data/local/models/transaction_model.dart';
-import '/core/utils/constants.dart';
-import 'package:csv/csv.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
 
 class FileService {
-
-  // --- FUNGSI UNTUK EKSPOR ---
-  Future<String> exportToCsv() async {
+  // --- FUNGSI UNTUK EKSPOR DATABASE ---
+  Future<String> exportDatabase() async {
     try {
-      final transactionBox = Hive.box<Transaction>(kTransactionsBox);
-      final transactions = transactionBox.values.toList();
-      if (transactions.isEmpty) return "Tidak ada data untuk diekspor.";
+      final dbPath = await getDatabasesPath();
+      final sourcePath = join(dbPath, 'ceban.db');
+      final file = File(sourcePath);
 
-      // Siapkan header dan baris data
-      List<List<dynamic>> rows = [];
-      rows.add(['description', 'amount', 'date', 'type', 'account_name', 'category']);
-      for (var trx in transactions) {
-        rows.add([
-          trx.description,
-          trx.amount,
-          trx.date.toIso8601String(),
-          describeEnum(trx.type),
-          trx.account.name,
-          'N/A' // Kolom kategori belum ada di model, kita beri default
-        ]);
+      if (!await file.exists()) {
+        return "Database tidak ditemukan.";
       }
 
-      String csvString = const ListToCsvConverter().convert(rows);
+      final bytes = await file.readAsBytes();
 
-      final csvBytes = Uint8List.fromList(csvString.codeUnits);
-
-      // Gunakan file_saver untuk memunculkan dialog 'Simpan Sebagai'
-      // Ini adalah cara modern & tidak perlu izin penyimpanan
-      String? filePath = await FileSaver.instance.saveFile(
-        name: kBackupFileName, // Nama file default dari constants.dart
-        bytes: csvBytes,
-        ext: 'csv',
-        mimeType: MimeType.csv,
+      String? savedPath = await FileSaver.instance.saveFile(
+        name: 'ceban_backup_${DateTime.now().toIso8601String()}.db',
+        bytes: bytes,
+        ext: 'db',
+        mimeType: MimeType.other, // atau MimeType.sqlite
       );
 
-      if (filePath != null) {
-        return "Ekspor berhasil! File disimpan oleh sistem.";
+      if (savedPath != null) {
+        return "Ekspor berhasil!";
       } else {
-        return "Ekspor dibatalkan oleh pengguna.";
+        return "Ekspor dibatalkan.";
       }
     } catch (e) {
-      debugPrint("Error saat ekspor data: $e");
-      return "Terjadi error saat mengekspor: $e";
+      debugPrint("Error saat ekspor database: $e");
+      return "Terjadi error: $e";
     }
   }
 
-  // --- FUNGSI UNTUK IMPOR ---
-  Future<List<Transaction>?> importFromCsv(String filePath) async {
+  // --- FUNGSI UNTUK IMPOR DATABASE ---
+  Future<String> importDatabase() async {
     try {
-      final file = File(filePath);
-      final csvString = await file.readAsString();
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['db'],
+      );
 
-      // Ubah string CSV menjadi List<List<dynamic>>
-      List<List<dynamic>> rows = const CsvToListConverter(eol: '\n').convert(csvString);
+      if (result != null && result.files.single.path != null) {
+        final importFile = File(result.files.single.path!);
+        
+        // Dapatkan path database saat ini
+        final dbPath = await getDatabasesPath();
+        final destinationPath = join(dbPath, 'ceban.db');
 
-      // Hapus baris header
-      if (rows.isNotEmpty) {
-        rows.removeAt(0);
+        // Tutup koneksi database yang ada jika terbuka
+        // (Anda mungkin perlu menambahkan logika untuk menutup DB di DatabaseHelper)
+        
+        // Salin file yang diimpor untuk menimpa database lama
+        await importFile.copy(destinationPath);
+
+        return "Impor berhasil! Silakan restart aplikasi.";
+      } else {
+        return "Impor dibatalkan.";
       }
-
-      List<Transaction> importedTransactions = [];
-      for (var row in rows) {
-        final transaction = Transaction()
-          ..description = row[0]
-          ..amount = double.parse(row[1].toString())
-          ..date = DateTime.parse(row[2])
-          ..type = TransactionType.values.firstWhere(
-            (e) => describeEnum(e) == row[3],
-            orElse: () => TransactionType.pengeluaran, // Default jika ada error
-          );
-        importedTransactions.add(transaction);
-      }
-
-      debugPrint("${importedTransactions.length} transaksi berhasil diimpor.");
-      return importedTransactions;
     } catch (e) {
-      debugPrint("Error saat impor data: $e");
-      return null;
+      debugPrint("Error saat impor database: $e");
+      return "Terjadi error: $e";
     }
   }
 }

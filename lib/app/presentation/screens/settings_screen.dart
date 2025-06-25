@@ -2,7 +2,6 @@ import '../../services/notification_service.dart';
 import '/app/data/local/models/transaction_model.dart';
 import '../../services/file_service.dart';
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import '/core/utils/constants.dart';
 import '../screens/manage_accounts_screen.dart';
@@ -37,51 +36,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
-    final transactionBox = Hive.box<Transaction>(kTransactionsBox);
-    final transactions = transactionBox.values.toList();
     final fileService = FileService();
-    final filePath = await fileService.exportToCsv();
+    final message = await fileService.exportDatabase();
 
     if (mounted) Navigator.pop(context);
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(filePath != null ? 'Data diekspor ke $filePath' : 'Gagal mengekspor data.'),
-      ),
+      SnackBar(content: Text(message)),
     );
   }
 
   Future<void> _handleImport() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom, allowedExtensions: ['csv'],
+    final fileService = FileService();
+    final message = await fileService.importDatabase();
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
-
-    if (result != null && result.files.single.path != null) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
-      );
-
-      final filePath = result.files.single.path!;
-      final fileService = FileService();
-      final importedTransactions = await fileService.importFromCsv(filePath);
-
-      if (mounted) Navigator.pop(context);
-
-      if (importedTransactions != null) {
-        final transactionBox = Hive.box<Transaction>(kTransactionsBox);
-        await transactionBox.clear();
-        await transactionBox.addAll(importedTransactions);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${importedTransactions.length} data berhasil diimpor!')),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gagal mengimpor data. Pastikan format file benar.')),
-        );
-      }
-    }
   }
 
   @override
@@ -113,13 +84,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(),
           ListTile(
             leading: const Icon(Icons.upload_file),
-            title: const Text('Ekspor Data ke CSV'),
+            title: const Text('Ekspor Data'),
             subtitle: const Text('Simpan salinan data di penyimpanan ponsel'),
             onTap: _handleExport,
           ),
           ListTile(
             leading: const Icon(Icons.download_for_offline),
-            title: const Text('Impor Data dari CSV'),
+            title: const Text('Impor Data'),
             subtitle: const Text('Pulihkan data dari file backup'),
             onTap: _handleImport,
           ),
