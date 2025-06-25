@@ -1,13 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
+import '../services/notification_parser.dart';
 
-// Penting: Fungsi ini harus berada di level atas (top-level) atau static
-// agar bisa dipanggil dari background.
 @pragma('vm:entry-point')
 void onNotificationPosted() {
-  // Fungsi ini dipanggil setiap kali ada notifikasi baru masuk
-  // Kita akan menambahkan logika parsing di sini nanti.
-  // Untuk sekarang, biarkan kosong atau tambahkan print sederhana jika perlu.
   debugPrint("Callback onNotificationPosted dipanggil dari background");
 }
 
@@ -29,8 +25,9 @@ class AppNotificationService {
       debugPrint("Isi: ${event.content}");
       debugPrint("---------------------------------------------");
       
-      // Di sinilah nanti kita akan memanggil logika parsing
-      // untuk mendeteksi transaksi dari GoPay, OVO, m-Banking, dll.
+      if (event.packageName != null && event.content != null) {
+        NotificationParser.parseAndSave(event.packageName!, event.content!);
+      }
     });
   }
 

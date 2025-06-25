@@ -1,7 +1,5 @@
 import 'package:frontend/core/utils/formatter.dart';
-
 import '../../data/local/models/transaction_model.dart';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -52,7 +50,8 @@ class TransactionListItem extends StatelessWidget {
             transaction.description,
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-          subtitle: Text(dateFormatted),
+          subtitle: Text('${transaction.account.name} • ${AppFormatters.toDateTime(transaction.date)}',
+          ),
           trailing: Text(
             amountFormatted,
             style: TextStyle(
