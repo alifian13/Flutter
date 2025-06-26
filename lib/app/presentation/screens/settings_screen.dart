@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../../services/notification_service.dart';
 import '../../services/file_service.dart';
 import '../screens/manage_accounts_screen.dart';
@@ -11,23 +10,53 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
-  // Menggunakan nama variabel Anda agar konsisten
+// Tambahkan "with WidgetsBindingObserver" untuk memantau siklus hidup aplikasi
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   bool _isServiceEnabled = false;
 
   @override
   void initState() {
     super.initState();
+    // Daftarkan observer untuk mendengarkan perubahan state aplikasi
+    WidgetsBinding.instance.addObserver(this);
+    // Cek status izin saat halaman pertama kali dibuka
     _checkPermissionStatus();
   }
 
-  /// Cek status izin saat ini dan perbarui UI.
+  @override
+  void dispose() {
+    // Hapus observer untuk mencegah memory leak
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Metode ini akan dipanggil setiap kali state aplikasi berubah
+  /// (misalnya: dari background ke foreground).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Jika pengguna kembali ke aplikasi (misal setelah dari pengaturan HP),
+    // kita cek ulang status izinnya.
+    if (state == AppLifecycleState.resumed) {
+      _checkPermissionStatus();
+    }
+  }
+
+  /// Cek status izin, perbarui UI, dan mulai layanan jika diizinkan.
   void _checkPermissionStatus() async {
     bool isEnabled = await AppNotificationService.isPermissionGranted();
     if (mounted) {
       setState(() {
         _isServiceEnabled = isEnabled;
       });
+
+      // SOLUSI MASALAH 2: Jika izin sudah aktif, kita mulai layanan notifikasi.
+      // Ini memastikan layanan berjalan setelah izin diberikan tanpa perlu restart.
+      if (isEnabled) {
+        // PERBAIKAN: Menggunakan nama metode yang benar 'startListening'.
+        AppNotificationService.startListening();
+      }
     }
   }
 
@@ -44,20 +73,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (mounted) Navigator.pop(context);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Menangani logika untuk impor database.
   Future<void> _handleImport() async {
     final fileService = FileService();
     final message = await fileService.importDatabase();
-    
+
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -67,33 +96,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(title: const Text('Pengaturan')),
       body: ListView(
         children: [
-          // Memberi judul pada setiap seksi agar lebih rapi
           const ListTile(
-            title: Text('Otomatisasi', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+            title: Text(
+              'Otomatisasi',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.deepPurple,
+              ),
+            ),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.notifications_active_outlined),
             title: const Text('Pencatatan Otomatis'),
-            // Menggunakan subtitle yang lebih deskriptif untuk memberi tahu statusnya
             subtitle: Text(
               _isServiceEnabled
-                ? 'Aktif. Aplikasi akan membaca notifikasi transaksi.'
-                : 'Nonaktif. Klik untuk memberikan izin akses notifikasi.',
+                  ? 'Aktif. Aplikasi akan membaca notifikasi transaksi.'
+                  : 'Nonaktif. Klik untuk memberikan izin akses notifikasi.',
             ),
             value: _isServiceEnabled,
             onChanged: (bool value) async {
+              // SOLUSI MASALAH 1: Hilangkan `Future.delayed`.
+              // Cukup minta izin. Pengecekan status akan ditangani oleh
+              // `didChangeAppLifecycleState` saat pengguna kembali ke aplikasi.
               if (value) {
                 await AppNotificationService.requestPermission();
               }
-              // Beri jeda sejenak agar dialog sistem sempat tertutup
-              // sebelum kita cek ulang status izinnya.
-              Future.delayed(const Duration(seconds: 1), _checkPermissionStatus);
             },
           ),
           const Divider(),
 
           const ListTile(
-            title: Text('Manajemen Data & Akun', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+            title: Text(
+              'Manajemen Data & Akun',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.deepPurple,
+              ),
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.account_balance_wallet_outlined),
@@ -102,7 +141,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const ManageAccountsScreen()),
+                MaterialPageRoute(
+                  builder: (context) => const ManageAccountsScreen(),
+                ),
               );
             },
           ),
